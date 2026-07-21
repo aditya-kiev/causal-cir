@@ -28,7 +28,7 @@ class TrainConfig:
 
     # Loss — paper defaults
     method: str = "cir"                     # "simclr" | "simclr_marginal" | "barlow_twins" |
-                                            # "vicreg" | "cir" | "circe" | "pidreg"
+                                            # "vicreg" | "cir" | "circe" | "hsic_baseline"
     temperature: float = 0.1                # paper: tau = 0.1
     hsic_mode: str = "rff"                  # "exact" | "rff" — RFF is practical for O(N)
     hsic_sigma: Optional[float] = None      # None = median heuristic
@@ -115,10 +115,10 @@ CONFIG_REGISTRY = {
         batch_size=256,
         lr=3e-4,
     ),
-    "config_pidreg_cmnist": TrainConfig(
+    "config_hsic_baseline_cmnist": TrainConfig(
         dataset="colored_mnist",
         backbone="resnet18",
-        method="pidreg",
+        method="hsic_baseline",
         hsic_lambda=0.05,
         epochs=200,
         batch_size=256,

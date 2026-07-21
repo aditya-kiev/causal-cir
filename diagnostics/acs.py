@@ -85,20 +85,22 @@ def average_causal_sensitivity(
             all_sens.append(sens)
 
         sens_vec = torch.stack(all_sens, dim=0).mean(dim=0)  # (D,)
+        # Sensitivity ratios s_{i→j} = E[Δr_j] / E[Δz_i] = E[Δr_j] / delta  (§6.1)
+        sens_vec = sens_vec / delta
         sens_mat.append(sens_vec.cpu().numpy())
 
     sens_mat = np.array(sens_mat)  # (n_latents, rep_dim)
 
     # Hungarian matching: minimize distance -> maximize sensitivity
-    # Use negative sensitivity as cost
     cost = -sens_mat
     latent_idx, coord_idx = linear_sum_assignment(cost)
 
-    # Normalized concentration: each matched sensitivity / max over latents
+    # Normalized concentration per §6.1:
+    #   fraction of each latent's total sensitivity captured by its matched coord
     matched_sens = sens_mat[latent_idx, coord_idx]
-    max_per_latent = sens_mat.max(axis=1, keepdims=True)
-    max_per_latent = np.where(max_per_latent < 1e-8, 1.0, max_per_latent)
-    normalized = matched_sens / max_per_latent[latent_idx]
+    total_per_latent = sens_mat.sum(axis=1)
+    total_per_latent = np.where(total_per_latent < 1e-8, 1.0, total_per_latent)
+    normalized = matched_sens / total_per_latent[latent_idx]
     concentration = float(normalized.mean())
 
     return {

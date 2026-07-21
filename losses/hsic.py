@@ -172,7 +172,7 @@ def pairwise_hsic_rff(R: torch.Tensor,
 
 # ---------------------------------------------------------------------------
 # Cross-HSIC: sum_{j,k} HSIC(X[:,j], Y[:,k]) for two DIFFERENT matrices
-# Needed by PIDReg (HSIC(Z, A)) and simclr_marginal (HSIC(z1, z1)).
+# Needed by HSICBaseline (HSIC(Z, A)) and simclr_marginal (HSIC(z1, z1)).
 # ---------------------------------------------------------------------------
 
 def cross_hsic_exact(X: torch.Tensor, Y: torch.Tensor,

@@ -1,4 +1,4 @@
-"""Head-to-head comparison: CIR vs CIRCE vs PIDReg.
+"""Head-to-head comparison: CIR vs CIRCE vs HSICBaseline.
 
 Runs all three methods on the same data, same backbone, same budget.
 Outputs a unified results table to disk and stdout.
@@ -11,8 +11,9 @@ Reference verification:
   - CIRCE: Pogodin et al., "Efficient Conditionally Invariant Representation
     Learning", ICLR 2023.  (VERIFY this citation — original draft may have
     been inaccurate.)
-  - PIDReg: Tsai et al., "Conditional Contrastive Learning with Kernel
-    Methods", 2021.
+  - HSICBaseline: previously named PIDReg. The original publication
+    reference (Tsai et al., 2021) could not be verified — renamed to
+    avoid incorrect attribution.
 """
 
 import sys
@@ -28,7 +29,7 @@ from experiments.configs import TrainConfig
 from experiments.train import main as train_main
 
 
-METHODS = ["cir", "circe", "pidreg"]
+METHODS = ["cir", "circe", "hsic_baseline"]
 SEEDS = [0, 1, 2]
 
 
@@ -67,7 +68,7 @@ def run_comparison(
                 save_every=9999,    # no intermediate checkpoints
             )
             # Override for specific methods
-            if method in ("circe", "pidreg"):
+            if method in ("circe", "hsic_baseline"):
                 cfg.hsic_mode = "rff"
                 cfg.rff_dim = 128
 

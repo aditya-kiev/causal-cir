@@ -1,11 +1,11 @@
-"""PIDReg: Permutation-Invariant Dependence Regularization.
+"""HSIC Baseline: Dependence regularization via cross-HSIC.
 
-Reference (VERIFY this citation — original draft citation may be inaccurate):
-  - Tsai et al., "Conditional Contrastive Learning with Kernel Methods", 2021.
+This baseline penalizes dependence between the representation Z and the
+augmentation index A using cross-HSIC.
 
-PIDReg extends the contrastive objective by penalizing dependence between
-the representation Z and the augmentation index A, conditioned on the input.
-Here HSIC(Z, A) serves as the dependence measure.
+NOTE: Previously named "PIDReg". The original publication reference
+could not be verified (Tsai et al., 2021 does not correspond to any
+identifiable paper). Renamed to HSICBaseline to avoid incorrect attribution.
 
 Implementation:
   1. Concatenate both views: Z = [z1; z2] of shape (2N, p).
@@ -19,11 +19,11 @@ import torch.nn as nn
 from losses.hsic import CrossHSICExact
 
 
-class PIDReg(nn.Module):
-    """PIDReg regularizer.
+class HSICBaseline(nn.Module):
+    """HSIC-based dependence regularizer.
 
     Args:
-        hsic_lambda: Weight for the PID regularizer.
+        hsic_lambda: Weight for the regularizer.
         hsic_sigma: RBF bandwidth.
     """
 
@@ -35,7 +35,6 @@ class PIDReg(nn.Module):
     def forward(self, z1, z2, h1=None, h2=None):
         N = z1.shape[0]
         Z = torch.cat([z1, z2], dim=0)  # (2N, p)
-        # Augmentation labels: one-hot for view 1 vs view 2
         A = torch.zeros(2 * N, 2, device=z1.device)
         A[:N, 0] = 1.0
         A[N:, 1] = 1.0
@@ -44,6 +43,6 @@ class PIDReg(nn.Module):
         loss = self.hsic_lambda * hsic_val
 
         return loss, {
-            "pidreg_hsic": hsic_val.item(),
-            "pidreg_loss": loss.item(),
+            "hsic_baseline": hsic_val.item(),
+            "hsic_baseline_loss": loss.item(),
         }
