@@ -363,6 +363,8 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, required=True)
+    parser.add_argument("--run_name", type=str, default=None,
+                        help="Explicit run name (default: {method}_{dataset}_{timestamp})")
     args, overrides = parser.parse_known_args()
 
     cfg = get_config(args.config)
@@ -373,5 +375,8 @@ if __name__ == "__main__":
             key = k.lstrip("--")
             if hasattr(cfg, key):
                 setattr(cfg, key, type(getattr(cfg, key))(v))
+
+    if args.run_name is not None:
+        cfg.run_name = args.run_name
 
     main(cfg)

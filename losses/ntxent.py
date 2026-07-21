@@ -48,7 +48,7 @@ class NTXentLoss(torch.nn.Module):
 
         # Positive pairs: (i, i+N) and (i+N, i)
         targets = torch.zeros(2 * N, device=z.device, dtype=torch.long)
-        targets[:N] = torch.arange(N, device=z.device) + N
+        targets[:N] = torch.arange(N, device=z.device) + N - 1
         targets[N:] = torch.arange(N, device=z.device)
 
         loss = F.cross_entropy(sim, targets)
