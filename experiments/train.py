@@ -198,6 +198,29 @@ def build_dataloaders(cfg: TrainConfig):
     return None, train_loader, probe_train_loader, corr_loader, uncorr_loader
 
 
+class _ContrastiveWithRegularizer(torch.nn.Module):
+    """Wraps an NTXentLoss contrastive term with a regularizer.
+
+    The regularizer is expected to return (loss, metrics_dict).
+    Total = contrastive_loss + regularizer_loss.
+    """
+
+    def __init__(self, contrastive, regularizer):
+        super().__init__()
+        self.contrastive = contrastive
+        self.regularizer = regularizer
+
+    def forward(self, z1, z2, h1=None, h2=None):
+        c_loss = self.contrastive(z1, z2)
+        r_loss, r_metrics = self.regularizer(z1, z2, h1, h2)
+        total = c_loss + r_loss
+        metrics = {"contrastive_loss": c_loss.item(), "total_loss": total.item()}
+        for k, v in r_metrics.items():
+            if k != "total_loss":
+                metrics[k] = v
+        return total, metrics
+
+
 def build_model_and_loss(cfg: TrainConfig, device: torch.device):
     """Build encoder and loss module."""
     encoder = Encoder(
@@ -244,9 +267,15 @@ def build_model_and_loss(cfg: TrainConfig, device: torch.device):
                 "total_loss": total.item(),
             }
     elif cfg.method == "circe":
-        loss_fn = CIRCE(hsic_lambda=cfg.hsic_lambda, hsic_sigma=cfg.hsic_sigma)
+        loss_fn = _ContrastiveWithRegularizer(
+            NTXentLoss(temperature=cfg.temperature),
+            CIRCE(dim=cfg.proj_out_dim, hsic_lambda=cfg.hsic_lambda, hsic_sigma=cfg.hsic_sigma),
+        )
     elif cfg.method == "hsic_baseline":
-        loss_fn = HSICBaseline(hsic_lambda=cfg.hsic_lambda, hsic_sigma=cfg.hsic_sigma)
+        loss_fn = _ContrastiveWithRegularizer(
+            NTXentLoss(temperature=cfg.temperature),
+            HSICBaseline(hsic_lambda=cfg.hsic_lambda, hsic_sigma=cfg.hsic_sigma),
+        )
     else:
         raise ValueError(f"Unknown method '{cfg.method}'")
 
@@ -324,7 +353,8 @@ def main(cfg: TrainConfig):
     encoder, loss_fn = build_model_and_loss(cfg, device)
 
     optimizer = torch.optim.AdamW(
-        encoder.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay,
+        list(encoder.parameters()) + list(loss_fn.parameters()),
+        lr=cfg.lr, weight_decay=cfg.weight_decay,
     )
 
     scheduler = None

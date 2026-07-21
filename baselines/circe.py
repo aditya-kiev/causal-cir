@@ -52,23 +52,17 @@ class CIRCE(nn.Module):
         hsic_sigma: RBF bandwidth for HSIC.
     """
 
-    def __init__(self, hsic_lambda: float = 0.05, hsic_sigma: float = None):
+    def __init__(self, dim: int = 128, hsic_lambda: float = 0.05, hsic_sigma: float = None):
         super().__init__()
         self.hsic_lambda = hsic_lambda
         self.hsic = PairwiseHSICExact(sigma=hsic_sigma)
-        self.cond_mean = None
-
-    def _build_cond_net(self, dim: int, device: torch.device):
-        self.cond_mean = _ConditionalMeanMLP(dim).to(device)
+        self.cond_mean = _ConditionalMeanMLP(dim)
 
     def forward(self, z1, z2, h1=None, h2=None):
         """CIRCE regularization.
 
         Returns (loss, metrics_dict). The contrastive loss must be added externally.
         """
-        dim = z1.shape[1]
-        if self.cond_mean is None:
-            self._build_cond_net(dim, z1.device)
 
         z1_pred = self.cond_mean(z2)
         z2_pred = self.cond_mean(z1)
