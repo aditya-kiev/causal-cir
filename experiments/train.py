@@ -103,6 +103,27 @@ def build_contrastive_transform(dataset_name: str):
     return None
 
 
+class SCMDataset(Dataset):
+    """Synthetic SCM dataset: generates random latents and renders to images on the fly.
+
+    Returns (aug1, aug2, label, spurious) where label/spurious are dummy values
+    since SCM data has no natural class labels.
+    """
+
+    def __init__(self, scm, size=5000):
+        self.scm = scm
+        self.size = size
+
+    def __len__(self):
+        return self.size
+
+    def __getitem__(self, idx):
+        with torch.no_grad():
+            z = self.scm.sample_prior(1)
+            img = self.scm.render(z).squeeze(0)  # (3, H, W)
+        return img, img, 0, 0
+
+
 def build_dataloaders(cfg: TrainConfig):
     """Build train and eval dataloaders.
 
@@ -146,18 +167,30 @@ def build_dataloaders(cfg: TrainConfig):
         uncorr_loader = DataLoader(uncorr_base, **eval_kwargs)
 
     elif cfg.dataset == "waterbirds":
-        train_dataset = WaterbirdsWrapper(root=cfg.data_root, split="train", augment=True)
+        train_base = WaterbirdsWrapper(root=cfg.data_root, split="train", augment=None)
         val_dataset = WaterbirdsWrapper(root=cfg.data_root, split="val", augment=False)
         test_dataset = WaterbirdsWrapper(root=cfg.data_root, split="test", augment=False)
+        train_transform = build_contrastive_transform("waterbirds")
+        train_dataset = ContrastiveDataset(train_base, transform=train_transform)
         train_loader = DataLoader(train_dataset, **train_kwargs)
-        probe_train_loader = DataLoader(train_dataset, **eval_kwargs)
+        probe_train_loader = DataLoader(
+            WaterbirdsWrapper(root=cfg.data_root, split="train", augment=False),
+            **eval_kwargs,
+        )
         corr_loader = DataLoader(val_dataset, **eval_kwargs)
         uncorr_loader = DataLoader(test_dataset, **eval_kwargs)
 
     elif cfg.dataset == "scm":
         scm = get_scm(cfg.scm_name, causal_parents=cfg.scm_causal_parents,
                       nuisance_dims=cfg.scm_nuisance_dims)
-        return scm, None, None, None, None
+        scm_kwargs = {**train_kwargs, "num_workers": 0, "pin_memory": False}
+        scm_eval_kwargs = {**scm_kwargs, "shuffle": False, "drop_last": False}
+        train_dataset = SCMDataset(scm, size=cfg.batch_size * 3)
+        train_loader = DataLoader(train_dataset, **scm_kwargs)
+        probe_train_loader = DataLoader(SCMDataset(scm, size=cfg.batch_size * 2), **scm_eval_kwargs)
+        corr_loader = DataLoader(SCMDataset(scm, size=cfg.batch_size * 2), **scm_eval_kwargs)
+        uncorr_loader = DataLoader(SCMDataset(scm, size=cfg.batch_size * 2), **scm_eval_kwargs)
+        return scm, train_loader, probe_train_loader, corr_loader, uncorr_loader
 
     else:
         raise ValueError(f"Unknown dataset '{cfg.dataset}'")
@@ -374,7 +407,11 @@ if __name__ == "__main__":
         if k.startswith("--"):
             key = k.lstrip("--")
             if hasattr(cfg, key):
-                setattr(cfg, key, type(getattr(cfg, key))(v))
+                current = getattr(cfg, key)
+                if current is None:
+                    setattr(cfg, key, v)
+                else:
+                    setattr(cfg, key, type(current)(v))
 
     if args.run_name is not None:
         cfg.run_name = args.run_name

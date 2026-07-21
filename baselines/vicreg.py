@@ -38,7 +38,7 @@ class VICReg(nn.Module):
         batch_size, d = z.shape
         z_centered = z - z.mean(dim=0)
         cov = (z_centered.T @ z_centered) / batch_size  # (d, d)
-        off_diag = cov.flatten()[~torch.eye(d, dtype=torch.bool, device=z.device)].pow(2).sum()
+        off_diag = cov[~torch.eye(d, dtype=torch.bool, device=z.device)].pow(2).sum()
         return off_diag / d
 
     def forward(self, z1, z2, h1=None, h2=None):

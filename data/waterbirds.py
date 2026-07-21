@@ -63,7 +63,12 @@ class WaterbirdsWrapper(Dataset):
         self._split_name = split_map[split]
         self._indices = self._dataset.get_split_indices(self._split_name)
 
-        self.transform = _WATERBIRD_TRANSFORM_TRAIN if augment else _WATERBIRD_TRANSFORM_EVAL
+        if augment:
+            self.transform = _WATERBIRD_TRANSFORM_TRAIN
+        elif augment is False:
+            self.transform = _WATERBIRD_TRANSFORM_EVAL
+        else:
+            self.transform = None  # return raw PIL image
 
     def __len__(self):
         return len(self._indices)

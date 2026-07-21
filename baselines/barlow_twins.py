@@ -34,7 +34,7 @@ class BarlowTwins(nn.Module):
 
         # Loss
         on_diag = (C.diag() - 1).pow(2).sum()
-        off_diag = C.flatten()[~torch.eye(d, dtype=torch.bool, device=C.device)].pow(2).sum()
+        off_diag = C[~torch.eye(d, dtype=torch.bool, device=C.device)].pow(2).sum()
 
         loss = on_diag + self.lambd * off_diag
         return loss, {
