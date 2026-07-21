@@ -121,10 +121,16 @@ def pairwise_hsic_rff(R: torch.Tensor,
                       n_features: int = 128) -> torch.Tensor:
     """Sum_{j != k} HSIC(R[:,j], R[:,k]) via RFF approximation.
 
-    Uses the block-matrix trick for efficiency:
-      Let Psi be (n, p*D) stacking per-coordinate centered RFF features.
-      Then sum_{j,k} ||psi_j^T psi_k||^2_F = ||Psi^T Psi||^2_F,
-      and we subtract the j=k terms.
+    Uses the trace-trick to avoid the expensive (p*D, p*D) Gram matrix:
+      Let Psi_j be (n, D) centered RFF features for coordinate j.
+      G_j = Psi_j @ Psi_j^T of shape (n, n).
+      Then:
+        ||sum_j G_j||_F^2 = ||Psi @ Psi^T||_F^2 = ||Psi^T @ Psi||_F^2
+        sum_j ||G_j||_F^2 = sum_j ||Psi_j^T @ Psi_j||_F^2  (diagonal blocks)
+      Result = (||sum G_j||_F^2 - sum ||G_j||_F^2) / n^2
+
+    This reduces the dominant cost from O(p²·D²) to O(p·n²), a large
+    speedup when p >> n (typical setting: n=8-512, p=128).
 
     Args:
         R: Residual matrix, shape (n, p).
@@ -141,32 +147,27 @@ def pairwise_hsic_rff(R: torch.Tensor,
         sigma = _median_heuristic_1d(R)
 
     rff = _RFFEncoder(sigma=sigma, n_features=n_features)
+    rff._ensure_fitted(device)
     H = _centering_matrix(n, device)
 
-    # Build Psi: (n, p * D)
-    psi_blocks = []
-    for j in range(p):
-        col = R[:, j]                     # (n,)
-        phi = rff.embed(col)              # (n, D)
-        psi = H @ phi                     # (n, D) — centered features
-        psi_blocks.append(psi)
+    # Batched RFF embedding: (p, n) -> (p, n, D) — one matmul, no Python loop
+    scale = np.sqrt(2.0 / n_features)
+    # R.T: (p, n); unsqueeze(-1): (p, n, 1); rff._W: (1, D)
+    phi_all = scale * torch.cos(R.T.unsqueeze(-1) @ rff._W + rff._b)  # (p, n, D)
 
-    Psi = torch.cat(psi_blocks, dim=1)    # (n, p*D)
+    # Centering: H @ phi_j for all j — one einsum, no Python loop
+    psi_all = torch.einsum('ij,kjd->kid', H, phi_all)  # (p, n, D)
 
-    # M = Psi^T @ Psi of shape (p*D, p*D)
-    M = Psi.T @ Psi
+    # G_j = Psi_j @ Psi_j^T for all j — one batched matmul, no Python loop
+    G_all = torch.bmm(psi_all, psi_all.transpose(1, 2))  # (p, n, n)
 
-    # Frobenius norm squared of the full matrix
-    frob_sq_full = M.pow(2).sum()
+    # Full Frobenius norm: ||sum_j G_j||_F^2 = ||Psi @ Psi^T||_F^2
+    G = G_all.sum(dim=0)  # (n, n)
+    frob_sq_full = (G @ G).trace()
 
-    # Subtract diagonal block contributions (j == k)
-    # Each block is D x D, extract blocks from M and compute their Frobenius norm squared
-    diag_frob_sq = 0.0
-    for j in range(p):
-        block = M[j * n_features:(j + 1) * n_features, j * n_features:(j + 1) * n_features]
-        diag_frob_sq += block.pow(2).sum()
+    # Diagonal block Frobenius norms: sum_j ||G_j||_F^2
+    diag_frob_sq = G_all.pow(2).sum()
 
-    # sum_{j != k} HSIC_RFF = (frob_sq_full - diag_frob_sq) / n^2
     return (frob_sq_full - diag_frob_sq) / (n ** 2)
 
 
@@ -218,8 +219,8 @@ def cross_hsic_rff(X: torch.Tensor, Y: torch.Tensor,
                    n_features: int = 128) -> torch.Tensor:
     """RFF-approximated sum_{j,k} HSIC(X[:,j], Y[:,k]).
 
-    Uses the block-matrix trick: stack per-coordinate RFF features
-    from X and Y, compute Psi_x^T @ Psi_y, and take ||.||^2_F / n^2.
+    Uses the trace trick: ||Psi_x^T @ Psi_y||_F^2 = tr((Psi_x @ Psi_x^T) @ (Psi_y @ Psi_y^T)),
+    avoiding the expensive (d1*D, d2*D) Gram matrix.
     """
     n = X.shape[0]
     device = X.device
@@ -230,24 +231,22 @@ def cross_hsic_rff(X: torch.Tensor, Y: torch.Tensor,
         sigma = _median_heuristic_1d(Z)
 
     rff = _RFFEncoder(sigma=sigma, n_features=n_features)
+    rff._ensure_fitted(device)
     H = _centering_matrix(n, device)
+    scale = np.sqrt(2.0 / n_features)
 
-    # Build Psi_x: (n, d1 * D)
-    psi_blocks_x = []
-    for j in range(d1):
-        phi = rff.embed(X[:, j])
-        psi_blocks_x.append(H @ phi)
-    Psi_x = torch.cat(psi_blocks_x, dim=1)
+    # Batched embedding for X — one matmul, no Python loop
+    phi_x = scale * torch.cos(X.T.unsqueeze(-1) @ rff._W + rff._b)  # (d1, n, D)
+    psi_x = torch.einsum('ij,kjd->kid', H, phi_x)  # (d1, n, D)
+    G_x = torch.bmm(psi_x, psi_x.transpose(1, 2)).sum(dim=0)  # (n, n)
 
-    # Build Psi_y: (n, d2 * D)
-    psi_blocks_y = []
-    for k in range(d2):
-        phi = rff.embed(Y[:, k])
-        psi_blocks_y.append(H @ phi)
-    Psi_y = torch.cat(psi_blocks_y, dim=1)
+    # Batched embedding for Y — one matmul, no Python loop
+    phi_y = scale * torch.cos(Y.T.unsqueeze(-1) @ rff._W + rff._b)  # (d2, n, D)
+    psi_y = torch.einsum('ij,kjd->kid', H, phi_y)  # (d2, n, D)
+    G_y = torch.bmm(psi_y, psi_y.transpose(1, 2)).sum(dim=0)  # (n, n)
 
-    M = Psi_x.T @ Psi_y  # (d1*D, d2*D)
-    return M.pow(2).sum() / (n ** 2)
+    # tr(G_x @ G_y) = ||Psi_x^T @ Psi_y||_F^2
+    return (G_x @ G_y).trace() / (n ** 2)
 
 
 class CrossHSICExact(torch.nn.Module):
