@@ -1,4 +1,4 @@
-"""Average Causal Sensitivity (ACS).
+"""Axis-Wise Causal Sensitivity (ACS).
 
 Protocol:
   1. Sample a batch of latents z from the SCM prior.

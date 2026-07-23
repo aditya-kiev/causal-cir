@@ -47,10 +47,10 @@ All results are logged to `outputs/{run_name}/`. Each run creates:
 ### Diagnostics (run after training)
 
 ```bash
-# Average Causal Sensitivity
+# Axis-Wise Causal Sensitivity
 python diagnostics/acs.py --checkpoint path/to/checkpoint.pt --scm confounded
 
-# Invariance to Spurious Correlation
+# Interventional Transfer Gap
 python diagnostics/itg.py --checkpoint path/to/checkpoint.pt --dataset waterbirds
 ```
 
@@ -87,8 +87,8 @@ causal-cir/
 │   ├── hsic.py            # HSIC exact (biased V-stat) + RFF approximation
 │   └── cir.py             # CIR regularizer wrapper
 ├── diagnostics/        # Evaluation protocols
-│   ├── acs.py             # Average Causal Sensitivity
-│   └── itg.py             # Invariance to Spurious Correlation
+│   ├── acs.py             # Axis-Wise Causal Sensitivity
+│   └── itg.py             # Interventional Transfer Gap
 ├── baselines/          # Re-implementations
 │   ├── simclr.py          # Vanilla SimCLR (baseline)
 │   ├── simclr_marginal.py # SimCLR + marginal HSIC on each view

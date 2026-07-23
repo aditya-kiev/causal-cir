@@ -1,4 +1,4 @@
-"""Invariance to Spurious Correlation (ITG).
+"""Interventional Transfer Gap (ITG).
 
 Protocol:
   1. Train a linear probe on top of frozen representations using the
