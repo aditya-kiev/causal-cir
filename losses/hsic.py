@@ -116,6 +116,13 @@ def pairwise_hsic_exact(R: torch.Tensor, sigma: Optional[float] = None) -> torch
     return total / (n ** 2)
 
 
+# ---------------------------------------------------------------------------
+# Normalized by 1/n² to match the exact estimator (see tests/test_hsic.py
+# RFF-vs-exact convergence test). If you're cross-checking against the
+# paper's Appendix A.3, note the paper text has an error here (states 1/n)
+# that needs a separate fix in the paper source, not here.
+# ---------------------------------------------------------------------------
+
 def pairwise_hsic_rff(R: torch.Tensor,
                       sigma: Optional[float] = None,
                       n_features: int = 128) -> torch.Tensor:
