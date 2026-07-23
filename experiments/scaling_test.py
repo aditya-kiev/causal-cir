@@ -20,9 +20,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from experiments.configs import TrainConfig
 from experiments.train import main as train_main
+from experiments.run_table1 import _aggregate_seed_metrics
 
 
 BACKBONES = ["resnet18", "resnet50"]
+SEEDS = [0, 1, 2]
 # TODO: Add "tiny_vit" once implemented with proper ViT support
 
 
@@ -45,9 +47,9 @@ def run_scaling_test(
         print(f"{'='*60}")
 
         for method in ["simclr", "cir"]:
-            seed_metrics = {"train_loss": [], "itg_drop": [], "throughput": []}
+            seed_metrics_list = []
 
-            for seed in [0]:
+            for seed in SEEDS:
                 cfg = TrainConfig(
                     dataset=dataset,
                     backbone=backbone,
@@ -78,18 +80,23 @@ def run_scaling_test(
                 metrics_path = Path(output_dir) / cfg.run_name / "metrics.json"
                 if metrics_path.exists():
                     with open(metrics_path) as f:
-                        metrics = json.load(f)
-                    if metrics.get("train_loss"):
-                        seed_metrics["train_loss"].append(metrics["train_loss"][-1])
-                    if metrics.get("itg_drop"):
-                        seed_metrics["itg_drop"].extend(metrics["itg_drop"])
+                        m = json.load(f)
+                    flat = {}
+                    if m.get("train_loss"):
+                        flat["train_loss"] = m["train_loss"][-1]
+                    if m.get("itg_drop"):
+                        flat["itg_drop"] = m["itg_drop"][-1]
+                    seed_metrics_list.append(flat)
 
             key = f"{backbone}_{method}"
+            agg = _aggregate_seed_metrics(seed_metrics_list, ["train_loss", "itg_drop"])
             results[key] = {
                 "backbone": backbone,
                 "method": method,
-                "train_loss": float(np.mean(seed_metrics["train_loss"])) if seed_metrics["train_loss"] else None,
-                "itg_drop": float(np.mean(seed_metrics["itg_drop"])) if seed_metrics["itg_drop"] else None,
+                "train_loss_mean": agg["train_loss_mean"],
+                "train_loss_std": agg["train_loss_std"],
+                "itg_drop_mean": agg["itg_drop_mean"],
+                "itg_drop_std": agg["itg_drop_std"],
             }
 
     _print_table(results)
@@ -104,14 +111,18 @@ def run_scaling_test(
 
 def _print_table(results: dict):
     print("\n")
-    print("=" * 60)
-    print(f"{'Backbone':<15} {'Method':<12} {'Train Loss':>12} {'ITG Drop %':>12}")
-    print("-" * 60)
+    print("=" * 80)
+    print(f"{'Backbone':<15} {'Method':<12} {'Train Loss':>22} {'ITG Drop %':>22}")
+    print("-" * 80)
     for key, metrics in results.items():
-        tl = f"{metrics['train_loss']:.4f}" if metrics['train_loss'] is not None else "N/A"
-        itg = f"{metrics['itg_drop']:.2f}" if metrics['itg_drop'] is not None else "N/A"
-        print(f"{metrics['backbone']:<15} {metrics['method']:<12} {tl:>12} {itg:>12}")
-    print("=" * 60)
+        tl = f"{metrics.get('train_loss_mean', 'N/A'):.4f}" if metrics.get('train_loss_mean') is not None else "N/A"
+        if metrics.get('train_loss_std') is not None:
+            tl += f" ± {metrics['train_loss_std']:.4f}"
+        itg = f"{metrics.get('itg_drop_mean', 'N/A'):.2f}" if metrics.get('itg_drop_mean') is not None else "N/A"
+        if metrics.get('itg_drop_std') is not None:
+            itg += f" ± {metrics['itg_drop_std']:.2f}"
+        print(f"{metrics['backbone']:<15} {metrics['method']:<12} {tl:>22} {itg:>22}")
+    print("=" * 80)
 
 
 if __name__ == "__main__":
