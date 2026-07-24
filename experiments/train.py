@@ -357,9 +357,11 @@ def main(cfg: TrainConfig):
     # Aditya — either the paper text changes to say AdamW, or the code changes
     # to plain Adam (removing weight_decay) — before real experiments are run
     # under this config, since it will affect reproducing numbers either way.
+    params = list(encoder.parameters())
+    if isinstance(loss_fn, torch.nn.Module):
+        params += list(loss_fn.parameters())
     optimizer = torch.optim.AdamW(
-        list(encoder.parameters()) + list(loss_fn.parameters()),
-        lr=cfg.lr, weight_decay=cfg.weight_decay,
+        params, lr=cfg.lr, weight_decay=cfg.weight_decay,
     )
 
     scheduler = None
