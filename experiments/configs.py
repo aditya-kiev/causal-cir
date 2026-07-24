@@ -54,6 +54,7 @@ class TrainConfig:
     save_every: int = 10
     output_dir: str = "./outputs"
     run_name: Optional[str] = None
+    resume: bool = False
     use_wandb: bool = False
     wandb_project: str = "causal-cir"
 

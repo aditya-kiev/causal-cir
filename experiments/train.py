@@ -376,7 +376,22 @@ def main(cfg: TrainConfig):
     best_loss = float("inf")
     history = {"train_loss": [], "eval_loss": [], "acs": [], "itg_drop": []}
 
-    for epoch in range(1, cfg.epochs + 1):
+    start_epoch = 1
+    ckpt_dir = output_dir / "checkpoints"
+    latest_ckpt = ckpt_dir / "latest.pt"
+    if cfg.resume and latest_ckpt.exists():
+        print(f"Resuming from {latest_ckpt}")
+        ckpt = torch.load(latest_ckpt, map_location=device, weights_only=False)
+        encoder.load_state_dict(ckpt["encoder_state_dict"])
+        optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+        if scheduler is not None and "scheduler_state_dict" in ckpt:
+            scheduler.load_state_dict(ckpt["scheduler_state_dict"])
+        history = ckpt["history"]
+        start_epoch = ckpt["epoch"] + 1
+        best_loss = ckpt.get("best_loss", float("inf"))
+        print(f"Resumed at epoch {start_epoch} (best_loss={best_loss:.4f})")
+
+    for epoch in range(start_epoch, cfg.epochs + 1):
         train_loss = train_epoch(
             encoder, loss_fn, train_loader, optimizer, scheduler, cfg, device, epoch
         )
@@ -413,15 +428,19 @@ def main(cfg: TrainConfig):
                 torch.save(encoder.state_dict(), output_dir / "best.pt")
 
         if epoch % cfg.save_every == 0:
-            ckpt_dir = output_dir / "checkpoints"
-            ckpt_dir.mkdir(exist_ok=True)
-            torch.save({
+            ckpt_dir.mkdir(parents=True, exist_ok=True)
+            ckpt_dict = {
                 "epoch": epoch,
                 "encoder_state_dict": encoder.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
                 "history": history,
+                "best_loss": best_loss,
                 "config": asdict(cfg),
-            }, ckpt_dir / f"epoch_{epoch}.pt")
+            }
+            if scheduler is not None:
+                ckpt_dict["scheduler_state_dict"] = scheduler.state_dict()
+            torch.save(ckpt_dict, ckpt_dir / f"epoch_{epoch}.pt")
+            torch.save(ckpt_dict, latest_ckpt)
 
         with open(output_dir / "metrics.json", "w") as f:
             json.dump(history, f, indent=2)
@@ -435,6 +454,8 @@ if __name__ == "__main__":
     parser.add_argument("--config", type=str, required=True)
     parser.add_argument("--run_name", type=str, default=None,
                         help="Explicit run name (default: {method}_{dataset}_{timestamp})")
+    parser.add_argument("--resume", action="store_true",
+                        help="Resume from outputs/{run_name}/checkpoints/latest.pt")
     args, overrides = parser.parse_known_args()
 
     cfg = get_config(args.config)
@@ -452,5 +473,7 @@ if __name__ == "__main__":
 
     if args.run_name is not None:
         cfg.run_name = args.run_name
+    if args.resume:
+        cfg.resume = True
 
     main(cfg)
