@@ -616,9 +616,16 @@ if __name__ == "__main__":
     parser.add_argument("--plateau-patience", type=int, default=None)
     parser.add_argument("--no-amp", action="store_true",
                         help="Disable mixed precision (fp32 training)")
+    parser.add_argument("--backbone", type=str, default=None,
+                        help="Override the config's default backbone. Must match the config "
+                             "default unless --i-know-this-changes-backbone is also passed.")
+    parser.add_argument("--i-know-this-changes-backbone", action="store_true",
+                        help="Acknowledge that --backbone differs from the config's default "
+                             "backbone (deliberate override).")
     args, overrides = parser.parse_known_args()
 
     cfg = get_config(args.config)
+    default_backbone = cfg.backbone
 
     override_iter = iter(overrides)
     for k, v in zip(override_iter, override_iter):
@@ -645,5 +652,23 @@ if __name__ == "__main__":
         cfg.plateau_patience = args.plateau_patience
     if args.no_amp:
         cfg.amp = False
+
+    # Guard against accidental --backbone overrides on the main protocol.
+    # scaling_test.py sweeps backbones by building its own TrainConfig and
+    # calling train_main() directly, so it never passes through this CLI path.
+    if args.backbone is not None and args.backbone != default_backbone:
+        if not args.i_know_this_changes_backbone:
+            print(
+                f"ERROR: --backbone {args.backbone} differs from the '{args.config}' "
+                f"config's default backbone '{default_backbone}'. This would change the "
+                f"model for this run. Pass --i-know-this-changes-backbone to override "
+                f"deliberately.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        print(f"NOTE: --backbone {args.backbone} explicitly overrides the '{args.config}' "
+              f"default '{default_backbone}' (acknowledged via --i-know-this-changes-backbone).")
+    if args.backbone is not None:
+        cfg.backbone = args.backbone
 
     main(cfg)
