@@ -605,7 +605,7 @@ if __name__ == "__main__":
     parser.add_argument("--resolution", type=int, default=None,
                         help="Waterbirds input resolution in px (default: 128, configurable)")
     parser.add_argument("--max-epochs-with-plateau-check", action="store_true",
-                        help="Enable plateau early stopping (no >0.5% val improvement for "
+                        help="Enable plateau early stopping (no >0.5%% val improvement for "
                              "plateau_patience epochs -> stop)")
     parser.add_argument("--plateau-patience", type=int, default=None)
     parser.add_argument("--no-amp", action="store_true",
