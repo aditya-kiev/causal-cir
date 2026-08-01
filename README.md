@@ -91,8 +91,7 @@ causal-cir/
 │   ├── simclr_marginal.py # SimCLR + marginal HSIC on each view
 │   ├── barlow_twins.py    # Barlow Twins
 │   ├── vicreg.py          # VICReg
-│   ├── circe.py           # CIRCE (Pogodin et al., 2023, ICLR Oral)
-│   └── hsic_baseline.py   # Cross-HSIC dependence baseline
+│   └── circe.py           # CIRCE (Pogodin et al., 2023, ICLR Oral)
 ├── experiments/        # Training scripts
 │   ├── configs.py         # Centralized hyperparameter configs
 │   ├── train.py           # Main training loop

@@ -37,7 +37,6 @@ from baselines.simclr_marginal import SimCLRMarginalHSIC
 from baselines.barlow_twins import BarlowTwins
 from baselines.vicreg import VICReg
 from baselines.circe import CIRCE
-from baselines.hsic_baseline import HSICBaseline
 from diagnostics.acs import average_causal_sensitivity
 from diagnostics.itg import invariance_to_spurious_correlation
 
@@ -327,11 +326,6 @@ def build_model_and_loss(cfg: TrainConfig, device: torch.device):
         loss_fn = _ContrastiveWithRegularizer(
             NTXentLoss(temperature=cfg.temperature),
             CIRCE(dim=cfg.proj_out_dim, hsic_lambda=cfg.hsic_lambda, hsic_sigma=cfg.hsic_sigma),
-        )
-    elif cfg.method == "hsic_baseline":
-        loss_fn = _ContrastiveWithRegularizer(
-            NTXentLoss(temperature=cfg.temperature),
-            HSICBaseline(hsic_lambda=cfg.hsic_lambda, hsic_sigma=cfg.hsic_sigma),
         )
     else:
         raise ValueError(f"Unknown method '{cfg.method}'")
