@@ -19,7 +19,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from experiments.configs import TrainConfig
-from experiments.train import main as train_main
+from experiments.train import main as train_main, find_latest_ckpt, _collect_repro_meta
 from experiments.run_table1 import _aggregate_seed_metrics
 
 
@@ -34,12 +34,14 @@ def run_scaling_test(
     epochs: int = 100,
     batch_size: int = 128,
     output_dir: str = "./outputs/scaling_test",
+    ckpt_root: str = None,
 ):
     """Run CIR on multiple backbones and report metrics + timing."""
     if backbones is None:
         backbones = BACKBONES
 
     results = {}
+    per_seed = []
 
     for backbone in backbones:
         print(f"\n{'='*60}")
@@ -67,6 +69,13 @@ def run_scaling_test(
                     eval_every=epochs,
                     log_every=1,
                 )
+                if ckpt_root is not None:
+                    cfg.ckpt_root = ckpt_root
+
+                # Auto-resume from Drive/local checkpoint for this (bb, method, seed).
+                if find_latest_ckpt(cfg, Path(output_dir) / cfg.run_name):
+                    cfg.resume = True
+                    print(f"Found existing checkpoint for {cfg.run_name} -> resuming")
 
                 try:
                     train_main(cfg)
@@ -87,6 +96,8 @@ def run_scaling_test(
                     if m.get("itg_drop"):
                         flat["itg_drop"] = m["itg_drop"][-1]
                     seed_metrics_list.append(flat)
+                    per_seed.append({"backbone": backbone, "method": method,
+                                     "seed": seed, **flat})
 
             key = f"{backbone}_{method}"
             agg = _aggregate_seed_metrics(seed_metrics_list, ["train_loss", "itg_drop"])
@@ -101,12 +112,23 @@ def run_scaling_test(
 
     _print_table(results)
 
-    # Save
+    # Save aggregated + consolidated reproducibility output
     out_path = Path(output_dir) / "scaling_results.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w") as f:
         json.dump(results, f, indent=2)
+
+    consolidated = {
+        "meta": _collect_repro_meta(cfg),
+        "seeds": SEEDS,
+        "aggregated": results,
+        "per_seed": per_seed,
+    }
+    json_path = Path(output_dir) / "scaling_results_consolidated.json"
+    with open(json_path, "w") as f:
+        json.dump(consolidated, f, indent=2, default=str)
     print(f"Results saved to {out_path}")
+    print(f"Consolidated results written to {json_path}")
 
 
 def _print_table(results: dict):
@@ -133,6 +155,8 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--output_dir", type=str, default="./outputs/scaling_test")
+    parser.add_argument("--ckpt-root", type=str, default=None,
+                        help="Checkpoint root dir (Drive on Colab)")
     args = parser.parse_args()
 
     backbones = [b.strip() for b in args.backbones.split(",")]
@@ -142,4 +166,5 @@ if __name__ == "__main__":
         epochs=args.epochs,
         batch_size=args.batch_size,
         output_dir=args.output_dir,
+        ckpt_root=args.ckpt_root,
     )

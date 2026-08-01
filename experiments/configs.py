@@ -55,8 +55,25 @@ class TrainConfig:
     output_dir: str = "./outputs"
     run_name: Optional[str] = None
     resume: bool = False
+    # Colab/Drive checkpointing. Checkpoints are written under ckpt_root/{run_name}
+    # (mounted Drive path by default). On non-POSIX hosts (e.g. Windows dev boxes)
+    # ckpt_root is ignored and {output_dir}/{run_name}/checkpoints is used instead.
+    ckpt_root: str = "/content/drive/MyDrive/causal-cir-checkpoints"
+    ckpt_every: int = 10
     use_wandb: bool = False
     wandb_project: str = "causal-cir"
+
+    # Mixed precision (only active on CUDA)
+    amp: bool = True
+
+    # Waterbirds compute reduction
+    resolution: int = 128                    # Waterbirds input resolution (default 128, vs 224)
+
+    # Plateau early stopping (opt-in): stop if validation loss has not improved
+    # by more than plateau_min_improve (relative) for plateau_patience epochs.
+    plateau_early_stop: bool = False
+    plateau_patience: int = 20
+    plateau_min_improve: float = 0.005       # 0.5%
 
     # Hardware
     device: str = "cuda"

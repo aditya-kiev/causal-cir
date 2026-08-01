@@ -26,19 +26,22 @@ except ImportError:
     )
 
 
-_WATERBIRD_TRANSFORM_TRAIN = T.Compose([
-    T.RandomResizedCrop(224, scale=(0.7, 1.0)),
-    T.RandomHorizontalFlip(p=0.5),
-    T.ToTensor(),
-    T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-])
+def _waterbird_transform_train(resolution: int):
+    return T.Compose([
+        T.RandomResizedCrop(resolution, scale=(0.7, 1.0)),
+        T.RandomHorizontalFlip(p=0.5),
+        T.ToTensor(),
+        T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
 
-_WATERBIRD_TRANSFORM_EVAL = T.Compose([
-    T.Resize(256),
-    T.CenterCrop(224),
-    T.ToTensor(),
-    T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-])
+
+def _waterbird_transform_eval(resolution: int):
+    return T.Compose([
+        T.Resize(int(resolution * 256 / 224)),
+        T.CenterCrop(resolution),
+        T.ToTensor(),
+        T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
 
 
 class WaterbirdsWrapper(Dataset):
@@ -48,6 +51,7 @@ class WaterbirdsWrapper(Dataset):
         root: Path to store WILDS data.
         split: 'train', 'val', or 'test'.
         augment: Whether to apply training augmentations.
+        resolution: Input resolution in px (default 224; use 128 for lower compute).
     """
 
     def __init__(
@@ -55,18 +59,20 @@ class WaterbirdsWrapper(Dataset):
         root: str = "./data/waterbirds",
         split: str = "train",
         augment: bool = True,
+        resolution: int = 224,
     ):
         self._dataset = get_dataset(dataset="waterbirds", root_dir=root, download=True)
         self._split = split
+        self.resolution = resolution
 
         split_map = {"train": "train", "val": "val", "test": "test"}
         self._split_name = split_map[split]
         self._indices = self._dataset.get_split_indices(self._split_name)
 
         if augment:
-            self.transform = _WATERBIRD_TRANSFORM_TRAIN
+            self.transform = _waterbird_transform_train(resolution)
         elif augment is False:
-            self.transform = _WATERBIRD_TRANSFORM_EVAL
+            self.transform = _waterbird_transform_eval(resolution)
         else:
             self.transform = None  # return raw PIL image
 

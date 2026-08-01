@@ -21,12 +21,15 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from experiments.configs import TrainConfig, get_config
-from experiments.train import main as train_main
+from experiments.train import main as train_main, find_latest_ckpt, _collect_repro_meta
 
 # Table 1 methods — confirm these match build_model_and_loss() in train.py
 METHODS = ["simclr", "simclr_marginal", "barlow_twins", "vicreg", "cir"]
 
 SEEDS = [0, 1, 2]
+
+# Checkpoints (optimizer + epoch + RNG) are saved to cfg.ckpt_root/{run_name}
+# (Google Drive on Colab). Pass --ckpt-root to override.
 
 # TODO: Table 1 is currently ambiguous on which dataset(s) it covers.
 # It may be Colored MNIST only, Waterbirds only, or both.  Uncomment
@@ -64,6 +67,7 @@ def run_table1(
     dataset: str = "colored_mnist",
     config_suffix: str = None,
     output_dir: str = "./outputs/table1",
+    ckpt_root: str = None,
 ):
     """Run Table 1 comparison across methods and seeds.
 
@@ -71,9 +75,11 @@ def run_table1(
         dataset: Dataset name ("colored_mnist" or "waterbirds").
         config_suffix: Optional suffix for config names (e.g. "_scm_a").
         output_dir: Root output directory.
+        ckpt_root: Checkpoint root dir (Drive on Colab). Defaults to cfg.ckpt_root.
     """
     base_config_name = _DATASET_CONFIGS[dataset]
     results = []
+    per_seed = []
 
     for method in METHODS:
         seed_metrics_list = []
@@ -85,10 +91,19 @@ def run_table1(
             cfg.num_seeds = 1
             cfg.run_name = f"{method}_{dataset}_seed={seed}"
             cfg.output_dir = output_dir
+            if ckpt_root is not None:
+                cfg.ckpt_root = ckpt_root
 
             print(f"\n{'='*60}")
             print(f"Method: {method}, seed={seed}, dataset={dataset}")
             print(f"{'='*60}")
+
+            # Auto-resume: if a checkpoint exists for (method, dataset, seed),
+            # resume from it instead of restarting. train_main() also skips the
+            # run entirely if the checkpoint already reached cfg.epochs.
+            if find_latest_ckpt(cfg, Path(output_dir) / cfg.run_name):
+                cfg.resume = True
+                print(f"Found existing checkpoint for {cfg.run_name} -> resuming")
 
             try:
                 train_main(cfg)
@@ -101,12 +116,24 @@ def run_table1(
             metrics_path = Path(output_dir) / cfg.run_name / "metrics.json"
             if metrics_path.exists():
                 with open(metrics_path) as f:
-                    metrics_list = [json.load(f)]
+                    m = json.load(f)
+                metrics_list = [m]
             else:
                 metrics_list = []
 
             for m in metrics_list:
-                seed_metrics_list.append(m)
+                # Scalarize per-seed metrics (use last-epoch value of each list).
+                flat = {}
+                for k, v in m.items():
+                    if k == "meta" or isinstance(v, dict):
+                        continue
+                    if isinstance(v, list):
+                        if v:
+                            flat[k] = v[-1]
+                    else:
+                        flat[k] = v
+                per_seed.append({"method": method, "dataset": dataset, "seed": seed, **flat})
+                seed_metrics_list.append(flat)
 
         # Aggregate across seeds
         all_keys = ["train_loss", "eval_loss", "itg_drop", "acs",
@@ -118,6 +145,19 @@ def run_table1(
 
         # Write incremental output
         _write_csv(results, output_dir)
+
+    # Consolidated reproducibility output
+    consolidated = {
+        "meta": _collect_repro_meta(cfg),
+        "seeds": SEEDS,
+        "aggregated": results,
+        "per_seed": per_seed,
+    }
+    json_path = Path(output_dir) / "table1_results.json"
+    json_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(json_path, "w") as f:
+        json.dump(consolidated, f, indent=2, default=str)
+    print(f"Consolidated results written to {json_path}")
 
     return results
 
@@ -153,10 +193,13 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", type=str, default="colored_mnist",
                         choices=list(_DATASET_CONFIGS.keys()))
     parser.add_argument("--output_dir", type=str, default="./outputs/table1")
+    parser.add_argument("--ckpt-root", type=str, default=None,
+                        help="Checkpoint root dir (Drive on Colab)")
     args = parser.parse_args()
 
     results = run_table1(
         dataset=args.dataset,
         output_dir=args.output_dir,
+        ckpt_root=args.ckpt_root,
     )
     _print_table(results)

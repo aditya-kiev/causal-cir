@@ -6,11 +6,15 @@ Usage:
     python experiments/train.py --config config_cir_cmnist --hsic_lambda 0.5 --epochs 100
 """
 
+import os
+import csv
 import sys
 import json
+import time
 import random
+import subprocess
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from dataclasses import asdict
 
 import numpy as np
@@ -48,6 +52,54 @@ def set_seed(seed: int, deterministic: bool = True):
         torch.backends.cudnn.benchmark = False
 
 
+def _git_commit_hash() -> str:
+    """Return the current git commit hash, or 'unknown' if unavailable."""
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, cwd=Path(__file__).resolve().parent.parent,
+            timeout=5,
+        )
+        return out.stdout.strip() if out.returncode == 0 else "unknown"
+    except Exception:
+        return "unknown"
+
+
+def _collect_repro_meta(cfg) -> dict:
+    """Collect reproducibility metadata for results logging."""
+    return {
+        "git_commit": _git_commit_hash(),
+        "torch_version": torch.__version__,
+        "torch_cuda_available": torch.cuda.is_available(),
+        "torch_cuda_version": torch.version.cuda if torch.version.cuda else None,
+        "cuda_device_name": (torch.cuda.get_device_name(0)
+                             if torch.cuda.is_available() else None),
+        "python": sys.version.split()[0],
+        "numpy": np.__version__,
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "config": asdict(cfg),
+    }
+
+
+def resolve_ckpt_dir(cfg: TrainConfig, output_dir: Path) -> Path:
+    """Return the directory where checkpoints are written.
+
+    Uses cfg.ckpt_root/{run_name} (Google Drive on Colab) when cfg.ckpt_root
+    is set and we are on a POSIX host; otherwise falls back to
+    {output_dir}/checkpoints (e.g. local Windows dev).
+    """
+    if cfg.ckpt_root and os.name != "nt":
+        return Path(cfg.ckpt_root) / cfg.run_name
+    return output_dir / "checkpoints"
+
+
+def find_latest_ckpt(cfg: TrainConfig, output_dir: Path):
+    """Return the latest.pt path for this run, or None if it doesn't exist."""
+    ckpt_dir = resolve_ckpt_dir(cfg, output_dir)
+    latest = ckpt_dir / "latest.pt"
+    return latest if latest.exists() else None
+
+
 # ---------------------------------------------------------------------------
 # Contrastive dataset wrapper: applies augmentation twice per sample
 # ---------------------------------------------------------------------------
@@ -74,13 +126,14 @@ class ContrastiveDataset(Dataset):
         return x1, x2, label, spurious
 
 
-def build_contrastive_transform(dataset_name: str):
+def build_contrastive_transform(dataset_name: str, resolution: int = 224):
     """Build augmentation pipeline for contrastive learning.
 
     For Colored MNIST: the dataset returns (3,32,32) tinted tensors.
     We still apply color-jitter and crop augmentations.
 
-    For Waterbirds: ImageNet-style crop+flip.
+    For Waterbirds: ImageNet-style crop+flip at `resolution` px
+    (default 128, overridable via --resolution to reduce compute).
 
     Returns a transform or None if the dataset needs raw PIL.
     """
@@ -94,7 +147,7 @@ def build_contrastive_transform(dataset_name: str):
         ])
     elif dataset_name == "waterbirds":
         aug = T.Compose([
-            T.RandomResizedCrop(224, scale=(0.7, 1.0)),
+            T.RandomResizedCrop(resolution, scale=(0.7, 1.0)),
             T.RandomHorizontalFlip(p=0.5),
             T.ToTensor(),
             T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
@@ -167,14 +220,18 @@ def build_dataloaders(cfg: TrainConfig):
         uncorr_loader = DataLoader(uncorr_base, **eval_kwargs)
 
     elif cfg.dataset == "waterbirds":
-        train_base = WaterbirdsWrapper(root=cfg.data_root, split="train", augment=None)
-        val_dataset = WaterbirdsWrapper(root=cfg.data_root, split="val", augment=False)
-        test_dataset = WaterbirdsWrapper(root=cfg.data_root, split="test", augment=False)
-        train_transform = build_contrastive_transform("waterbirds")
+        train_base = WaterbirdsWrapper(root=cfg.data_root, split="train", augment=None,
+                                       resolution=cfg.resolution)
+        val_dataset = WaterbirdsWrapper(root=cfg.data_root, split="val", augment=False,
+                                        resolution=cfg.resolution)
+        test_dataset = WaterbirdsWrapper(root=cfg.data_root, split="test", augment=False,
+                                         resolution=cfg.resolution)
+        train_transform = build_contrastive_transform("waterbirds", cfg.resolution)
         train_dataset = ContrastiveDataset(train_base, transform=train_transform)
         train_loader = DataLoader(train_dataset, **train_kwargs)
         probe_train_loader = DataLoader(
-            WaterbirdsWrapper(root=cfg.data_root, split="train", augment=False),
+            WaterbirdsWrapper(root=cfg.data_root, split="train", augment=False,
+                              resolution=cfg.resolution),
             **eval_kwargs,
         )
         corr_loader = DataLoader(val_dataset, **eval_kwargs)
@@ -282,7 +339,8 @@ def build_model_and_loss(cfg: TrainConfig, device: torch.device):
     return encoder, loss_fn
 
 
-def train_epoch(encoder, loss_fn, loader, optimizer, scheduler, cfg, device, epoch):
+def train_epoch(encoder, loss_fn, loader, optimizer, scheduler, cfg, device, epoch,
+                scaler=None, use_amp=False):
     encoder.train()
     total_losses = []
 
@@ -297,12 +355,20 @@ def train_epoch(encoder, loss_fn, loader, optimizer, scheduler, cfg, device, epo
         x1, x2 = x1.to(device), x2.to(device)
         optimizer.zero_grad()
 
-        h1, z1 = encoder(x1)
-        h2, z2 = encoder(x2)
-
-        loss, metrics = loss_fn(z1, z2, h1, h2)
-        loss.backward()
-        optimizer.step()
+        if use_amp:
+            with torch.autocast(device_type="cuda"):
+                h1, z1 = encoder(x1)
+                h2, z2 = encoder(x2)
+                loss, metrics = loss_fn(z1, z2, h1, h2)
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            h1, z1 = encoder(x1)
+            h2, z2 = encoder(x2)
+            loss, metrics = loss_fn(z1, z2, h1, h2)
+            loss.backward()
+            optimizer.step()
 
         total_losses.append(metrics.get("total_loss", loss.item()))
         if scheduler is not None:
@@ -314,7 +380,7 @@ def train_epoch(encoder, loss_fn, loader, optimizer, scheduler, cfg, device, epo
 
 
 @torch.no_grad()
-def evaluate(encoder, loss_fn, loader, device):
+def evaluate(encoder, loss_fn, loader, device, use_amp=False):
     encoder.eval()
     losses = []
     for batch in loader:
@@ -324,9 +390,15 @@ def evaluate(encoder, loss_fn, loader, device):
             x, y, spurious = batch
             x1 = x2 = x
         x1, x2 = x1.to(device), x2.to(device)
-        h1, z1 = encoder(x1)
-        h2, z2 = encoder(x2)
-        loss, metrics = loss_fn(z1, z2, h1, h2)
+        if use_amp:
+            with torch.autocast(device_type="cuda"):
+                h1, z1 = encoder(x1)
+                h2, z2 = encoder(x2)
+                loss, metrics = loss_fn(z1, z2, h1, h2)
+        else:
+            h1, z1 = encoder(x1)
+            h2, z2 = encoder(x2)
+            loss, metrics = loss_fn(z1, z2, h1, h2)
         losses.append(metrics.get("total_loss", loss.item()))
     return float(np.mean(losses))
 
@@ -373,11 +445,20 @@ def main(cfg: TrainConfig):
     elif cfg.lr_schedule == "step":
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=60, gamma=0.1)
 
+    use_amp = bool(cfg.amp) and device.type == "cuda"
+    scaler = torch.amp.GradScaler("cuda") if use_amp else None
+
+    # Reproducibility metadata (git hash, versions, full config)
+    meta = _collect_repro_meta(cfg)
+    with open(output_dir / "metadata.json", "w") as f:
+        json.dump(meta, f, indent=2, default=str)
+
     best_loss = float("inf")
+    best_loss_epoch = 0
     history = {"train_loss": [], "eval_loss": [], "acs": [], "itg_drop": []}
 
     start_epoch = 1
-    ckpt_dir = output_dir / "checkpoints"
+    ckpt_dir = resolve_ckpt_dir(cfg, output_dir)
     latest_ckpt = ckpt_dir / "latest.pt"
     if cfg.resume and latest_ckpt.exists():
         print(f"Resuming from {latest_ckpt}")
@@ -386,19 +467,57 @@ def main(cfg: TrainConfig):
         optimizer.load_state_dict(ckpt["optimizer_state_dict"])
         if scheduler is not None and "scheduler_state_dict" in ckpt:
             scheduler.load_state_dict(ckpt["scheduler_state_dict"])
+        if scaler is not None and "scaler_state_dict" in ckpt:
+            scaler.load_state_dict(ckpt["scaler_state_dict"])
+        rng_state = ckpt.get("rng_state")
+        if rng_state:
+            torch.set_rng_state(rng_state["torch"])
+            if rng_state.get("torch_cuda") and torch.cuda.is_available():
+                torch.cuda.set_rng_state_all(rng_state["torch_cuda"])
+            np.random.set_state(rng_state["numpy"])
+            random.setstate(rng_state["python"])
         history = ckpt["history"]
         start_epoch = ckpt["epoch"] + 1
         best_loss = ckpt.get("best_loss", float("inf"))
+        best_loss_epoch = ckpt.get("best_loss_epoch", 0)
         print(f"Resumed at epoch {start_epoch} (best_loss={best_loss:.4f})")
 
+        if start_epoch > cfg.epochs:
+            print(f"Checkpoint already at epoch {start_epoch - 1} >= epochs={cfg.epochs}; nothing to train.")
+            payload = dict(history)
+            payload["meta"] = meta
+            with open(output_dir / "metrics.json", "w") as f:
+                json.dump(payload, f, indent=2)
+            return
+
+    timing_csv = output_dir / "timing.csv"
+    timing_exists = timing_csv.exists()
+
+    early_stopped = False
     for epoch in range(start_epoch, cfg.epochs + 1):
+        epoch_start = time.time()
         train_loss = train_epoch(
-            encoder, loss_fn, train_loader, optimizer, scheduler, cfg, device, epoch
+            encoder, loss_fn, train_loader, optimizer, scheduler, cfg, device, epoch,
+            scaler=scaler, use_amp=use_amp,
         )
+        elapsed = time.time() - epoch_start
         history["train_loss"].append(train_loss)
 
+        # Per-epoch timing log (track real compute cost)
+        with open(timing_csv, "a", newline="") as f:
+            writer = csv.writer(f)
+            if not timing_exists:
+                writer.writerow(["epoch", "timestamp_utc", "wall_seconds",
+                                 "batches", "samples_per_sec"])
+                timing_exists = True
+            n_batches = len(train_loader) if train_loader is not None else 0
+            writer.writerow([
+                epoch, datetime.now(timezone.utc).isoformat(), f"{elapsed:.2f}",
+                n_batches, f"{cfg.batch_size * n_batches / elapsed:.1f}" if elapsed > 0 else "0",
+            ])
+
         if epoch % cfg.eval_every == 0 and corr_loader is not None:
-            eval_loss = evaluate(encoder, loss_fn, corr_loader, device)
+            eval_loss = evaluate(encoder, loss_fn, corr_loader, device, use_amp=use_amp)
             history["eval_loss"].append(eval_loss)
             print(f"Epoch {epoch}: train_loss={train_loss:.4f}, eval_loss={eval_loss:.4f}")
 
@@ -422,12 +541,24 @@ def main(cfg: TrainConfig):
                 print(f"  ITG accuracy drop: {itg_result['accuracy_drop']:.2f}% "
                       f"(corr={itg_result['acc_corr']:.3f}, uncorr={itg_result['acc_uncorr']:.3f})")
 
-            # Save best model
-            if eval_loss < best_loss:
+            # Save best model + plateau early-stop bookkeeping.
+            # Improvement must exceed plateau_min_improve (relative) to count.
+            if eval_loss < best_loss * (1.0 - cfg.plateau_min_improve):
                 best_loss = eval_loss
+                best_loss_epoch = epoch
                 torch.save(encoder.state_dict(), output_dir / "best.pt")
 
-        if epoch % cfg.save_every == 0:
+            if (cfg.plateau_early_stop and best_loss_epoch > 0
+                    and epoch - best_loss_epoch >= cfg.plateau_patience):
+                print(f"Plateau early stop at epoch {epoch}: no improvement of "
+                      f"> {cfg.plateau_min_improve * 100:.2f}% for "
+                      f"{cfg.plateau_patience} epochs "
+                      f"(best_eval={best_loss:.4f} @ epoch {best_loss_epoch})")
+                history["early_stop_epoch"] = epoch
+                early_stopped = True
+                break
+
+        if epoch % cfg.ckpt_every == 0:
             ckpt_dir.mkdir(parents=True, exist_ok=True)
             ckpt_dict = {
                 "epoch": epoch,
@@ -435,17 +566,30 @@ def main(cfg: TrainConfig):
                 "optimizer_state_dict": optimizer.state_dict(),
                 "history": history,
                 "best_loss": best_loss,
+                "best_loss_epoch": best_loss_epoch,
                 "config": asdict(cfg),
+                "rng_state": {
+                    "torch": torch.get_rng_state(),
+                    "torch_cuda": (list(torch.cuda.get_rng_state_all())
+                                   if torch.cuda.is_available() else None),
+                    "numpy": np.random.get_state(),
+                    "python": random.getstate(),
+                },
             }
             if scheduler is not None:
                 ckpt_dict["scheduler_state_dict"] = scheduler.state_dict()
+            if scaler is not None:
+                ckpt_dict["scaler_state_dict"] = scaler.state_dict()
             torch.save(ckpt_dict, ckpt_dir / f"epoch_{epoch}.pt")
             torch.save(ckpt_dict, latest_ckpt)
 
+        payload = dict(history)
+        payload["meta"] = meta
         with open(output_dir / "metrics.json", "w") as f:
-            json.dump(history, f, indent=2)
+            json.dump(payload, f, indent=2)
 
-    print(f"Training complete. Results in {output_dir}")
+    status = "early-stopped" if early_stopped else "complete"
+    print(f"Training {status}. Results in {output_dir}")
 
 
 if __name__ == "__main__":
@@ -455,7 +599,17 @@ if __name__ == "__main__":
     parser.add_argument("--run_name", type=str, default=None,
                         help="Explicit run name (default: {method}_{dataset}_{timestamp})")
     parser.add_argument("--resume", action="store_true",
-                        help="Resume from outputs/{run_name}/checkpoints/latest.pt")
+                        help="Resume from the latest.pt checkpoint for this run")
+    parser.add_argument("--ckpt-root", type=str, default=None,
+                        help="Checkpoint root dir (default: cfg.ckpt_root, a Drive path on Colab)")
+    parser.add_argument("--resolution", type=int, default=None,
+                        help="Waterbirds input resolution in px (default: 128, configurable)")
+    parser.add_argument("--max-epochs-with-plateau-check", action="store_true",
+                        help="Enable plateau early stopping (no >0.5% val improvement for "
+                             "plateau_patience epochs -> stop)")
+    parser.add_argument("--plateau-patience", type=int, default=None)
+    parser.add_argument("--no-amp", action="store_true",
+                        help="Disable mixed precision (fp32 training)")
     args, overrides = parser.parse_known_args()
 
     cfg = get_config(args.config)
@@ -475,5 +629,15 @@ if __name__ == "__main__":
         cfg.run_name = args.run_name
     if args.resume:
         cfg.resume = True
+    if args.ckpt_root is not None:
+        cfg.ckpt_root = args.ckpt_root
+    if args.resolution is not None:
+        cfg.resolution = args.resolution
+    if args.max_epochs_with_plateau_check:
+        cfg.plateau_early_stop = True
+    if args.plateau_patience is not None:
+        cfg.plateau_patience = args.plateau_patience
+    if args.no_amp:
+        cfg.amp = False
 
     main(cfg)
