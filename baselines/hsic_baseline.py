@@ -3,10 +3,6 @@
 This baseline penalizes dependence between the representation Z and the
 augmentation index A using cross-HSIC.
 
-NOTE: Previously named "PIDReg". The original publication reference
-could not be verified (Tsai et al., 2021 does not correspond to any
-identifiable paper). Renamed to HSICBaseline to avoid incorrect attribution.
-
 Implementation:
   1. Concatenate both views: Z = [z1; z2] of shape (2N, p).
   2. Create augmentation labels: A = one-hot(view_idx) of shape (2N, 2).

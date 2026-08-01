@@ -28,9 +28,6 @@ python setup.py develop
 # CIR on Colored MNIST
 python experiments/train.py --config config_cir_cmnist
 
-# Baseline comparison (CIR vs CIRCE vs HSICBaseline)
-python experiments/compare_circe_pidreg.py --config config_compare
-
 # Ablation sweep
 python experiments/train_ablation.py --sweep hsic_lambda
 
@@ -95,12 +92,11 @@ causal-cir/
 │   ├── barlow_twins.py    # Barlow Twins
 │   ├── vicreg.py          # VICReg
 │   ├── circe.py           # CIRCE (Pogodin et al., 2023, ICLR Oral)
-│   └── hsic_baseline.py   # HSIC baseline (previously "PIDReg"; citation unverifiable)
+│   └── hsic_baseline.py   # Cross-HSIC dependence baseline
 ├── experiments/        # Training scripts
 │   ├── configs.py         # Centralized hyperparameter configs
 │   ├── train.py           # Main training loop
 │   ├── train_ablation.py  # Ablation harness
-│   ├── compare_circe_pidreg.py  # Head-to-head comparison
 │   └── scaling_test.py    # Scaling to larger backbones
 ├── notebooks/          # Analysis notebooks
 ├── tests/              # Unit tests
