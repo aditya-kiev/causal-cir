@@ -1,8 +1,8 @@
 """CIRCE: Conditional Independence Regression-based Contrastive Estimation.
 
-Reference (VERIFY this citation — original draft may have been inaccurate):
-  - Pogodin et al., "Efficient Conditionally Invariant Representation Learning",
-    ICLR 2023.
+Reference:
+  - Pogodin, Deka, Li, Sutherland, Veitch, Gretton. "Efficient Conditionally
+    Invariant Representation Learning." ICLR 2023 (Oral).
 
 CIRCE estimates the conditional independence regularization by first learning
 a conditional mean embedding, then measuring the HSIC of the residuals
