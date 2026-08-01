@@ -21,7 +21,7 @@ class TrainConfig:
     # Model
     backbone: str = "resnet18"              # "resnet18" | "resnet50" | "tiny_vit"
     pretrained: bool = False                # ImageNet pretrained (True for Waterbirds)
-    img_size: int = 32                      # input size (32 for ColoredMNIST, 224 for Waterbirds)
+    img_size: int = 32                      # input size (32 for ColoredMNIST, 128 for Waterbirds; ViT-only)
     proj_hidden_dim: int = 2048
     proj_out_dim: int = 128                 # paper: output dim p = 128
     cir_on: str = "projection"              # paper: applied to projection head
@@ -66,8 +66,11 @@ class TrainConfig:
     # Mixed precision (only active on CUDA)
     amp: bool = True
 
-    # Waterbirds compute reduction
-    resolution: int = 128                    # Waterbirds input resolution (default 128, vs 224)
+    # Waterbirds compute reduction. 128x128 is a documented compute-constraint
+    # deviation from the paper's original 256x256 design; applied identically
+    # to all methods/baselines so cross-method comparison stays fair. Backbone
+    # is resnet18 per the paper (Appendix B.2) for all Waterbirds methods.
+    resolution: int = 128
 
     # Plateau early stopping (opt-in): stop if validation loss has not improved
     # by more than plateau_min_improve (relative) for plateau_patience epochs.
@@ -193,9 +196,9 @@ CONFIG_REGISTRY = {
     ),
     "config_cir_waterbirds": TrainConfig(
         dataset="waterbirds",
-        backbone="resnet50",
+        backbone="resnet18",
         pretrained=True,
-        img_size=224,
+        img_size=128,
         method="cir",
         hsic_lambda=0.05,
         hsic_mode="rff",
@@ -207,9 +210,9 @@ CONFIG_REGISTRY = {
     ),
     "config_simclr_waterbirds": TrainConfig(
         dataset="waterbirds",
-        backbone="resnet50",
+        backbone="resnet18",
         pretrained=True,
-        img_size=224,
+        img_size=128,
         method="simclr",
         temperature=0.1,
         epochs=100,
@@ -218,9 +221,9 @@ CONFIG_REGISTRY = {
     ),
     "config_barlow_waterbirds": TrainConfig(
         dataset="waterbirds",
-        backbone="resnet50",
+        backbone="resnet18",
         pretrained=True,
-        img_size=224,
+        img_size=128,
         method="barlow_twins",
         epochs=100,
         batch_size=128,
@@ -228,9 +231,9 @@ CONFIG_REGISTRY = {
     ),
     "config_vicreg_waterbirds": TrainConfig(
         dataset="waterbirds",
-        backbone="resnet50",
+        backbone="resnet18",
         pretrained=True,
-        img_size=224,
+        img_size=128,
         method="vicreg",
         epochs=100,
         batch_size=128,
@@ -238,9 +241,9 @@ CONFIG_REGISTRY = {
     ),
     "config_simclr_marginal_waterbirds": TrainConfig(
         dataset="waterbirds",
-        backbone="resnet50",
+        backbone="resnet18",
         pretrained=True,
-        img_size=224,
+        img_size=128,
         method="simclr_marginal",
         hsic_lambda=0.05,
         epochs=100,

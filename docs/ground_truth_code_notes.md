@@ -269,5 +269,15 @@ Consistent with the README's "every table entry is mean ± std over 3 seeds".
    configured but unused, so the causal/nuisance split is 2/6, not 2/4.
 4. **Colored MNIST has no validation split** — only two test environments.
 5. **ID/OOD Acc vs ITG** are the same probe measurement (item c).
-6. **Waterbirds resolution**: code default (config) was 224; new `--resolution`
-   flag defaults to 128 for the Colab compute reduction.
+6. **Waterbirds backbone/resolution (RESOLVED)**: Decision from Aditya — keep
+   **resnet18** (paper-authoritative, keeps cross-method comparison fair; the
+   resnet50/128 entry was a deliberate-but-flagged choice in commit eecab53,
+   now reverted to resnet18). Keep **128x128 resolution** as a documented
+   compute-constraint deviation from the paper's original 256x256, applied
+   identically to all methods/baselines. **Appendix B.2 should state**: "128x128
+   resolution (reduced from an original 256x256 design due to compute
+   constraints; validation curves for both resolutions in Appendix X show
+   consistent method ranking)."  `img_size` in the config is set to 128 to
+   match the actual input (it is ViT-only; resnet ignores it).
+7. **Optimizer (RESOLVED)**: Keep `torch.optim.Adam` as-is; the paper/config
+   will be corrected to say Adam (not AdamW).
