@@ -407,6 +407,12 @@ def main(cfg: TrainConfig):
     set_seed(cfg.seed)
     device = torch.device(cfg.device if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
+    # Explicit startup log so the resolved backbone/resolution are visible in
+    # every run (protects against accidental --backbone resnet50 overrides on
+    # the main Table 1 protocol, which should be resnet18 per the paper).
+    print(f"Resolved run config: method={cfg.method} dataset={cfg.dataset} "
+          f"backbone={cfg.backbone} resolution={cfg.resolution} "
+          f"pretrained={cfg.pretrained} img_size={cfg.img_size}")
 
     if cfg.run_name is None:
         cfg.run_name = f"{cfg.method}_{cfg.dataset}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"

@@ -194,6 +194,9 @@ CONFIG_REGISTRY = {
         batch_size=256,
         lr=3e-4,
     ),
+    # Waterbirds configs below: resnet18 @ 128px — matches paper Appendix B.2,
+    # reduced resolution documented as a compute-constraint deviation. This is
+    # the main Table 1 protocol; resnet50 appears only in scaling_test.py.
     "config_cir_waterbirds": TrainConfig(
         dataset="waterbirds",
         backbone="resnet18",
