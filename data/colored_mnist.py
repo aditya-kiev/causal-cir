@@ -56,6 +56,11 @@ class ColoredMNIST(Dataset):
         ])
         # Precompute one RGB tint per digit
         self._tints = self._precompute_tints()
+        # Cache of decoded+resized (but NOT tinted) grayscale tensors, built
+        # lazily on first access. None of the decode/resize/ToTensor work is
+        # random or epoch-dependent, so it only ever needs to happen once.
+        # Shape (N, 1, 32, 32) float32 in [0, 1]; ~60k images for train split.
+        self._gray_cache = None
 
     def _precompute_tints(self):
         """Generate a distinct RGB tint vector for digits 0-9."""
@@ -87,13 +92,28 @@ class ColoredMNIST(Dataset):
         """Tint a (3, 32, 32) tensor by multiplying channels by [r, g, b]."""
         return img_tensor * tint_rgb.view(3, 1, 1)
 
+    def _build_gray_cache(self):
+        """Decode + resize all MNIST images once into a single in-memory tensor.
+
+        Returns:
+            torch.Tensor of shape (N, 1, 32, 32), float32 in [0, 1].
+        """
+        n = len(self._mnist)
+        cache = torch.empty((n, 1, 32, 32), dtype=torch.float32)
+        for idx in range(n):
+            img_pil, _ = self._mnist[idx]
+            cache[idx] = self._base_transform(img_pil)
+        return cache
+
     def __len__(self):
         return len(self._mnist)
 
     def __getitem__(self, idx):
-        img_pil, label = self._mnist[idx]  # PIL grayscale
-        # Resize + [0,1] tensor (1, 32, 32)
-        img_tensor = self._base_transform(img_pil)  # (1, 32, 32)
+        if self._gray_cache is None:
+            self._gray_cache = self._build_gray_cache()
+        label = self._mnist.targets[idx].item()
+        # Resize + [0,1] tensor (1, 32, 32) — pulled from cache instead of re-decoding
+        img_tensor = self._gray_cache[idx]  # (1, 32, 32)
         # Repeat to 3 channels
         img_rgb = img_tensor.repeat(3, 1, 1)  # (3, 32, 32)
 
