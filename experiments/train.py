@@ -550,10 +550,11 @@ def main(cfg: TrainConfig):
 
             if (cfg.plateau_early_stop and best_loss_epoch > 0
                     and epoch - best_loss_epoch >= cfg.plateau_patience):
-                print(f"Plateau early stop at epoch {epoch}: no improvement of "
-                      f"> {cfg.plateau_min_improve * 100:.2f}% for "
-                      f"{cfg.plateau_patience} epochs "
-                      f"(best_eval={best_loss:.4f} @ epoch {best_loss_epoch})")
+                print("=" * 70)
+                print(f"PLATEAU STOP: stopped at epoch {epoch} "
+                      f"(best eval_loss={best_loss:.4f} at epoch {best_loss_epoch}, "
+                      f"patience={cfg.plateau_patience})")
+                print("=" * 70)
                 history["early_stop_epoch"] = epoch
                 early_stopped = True
                 break
