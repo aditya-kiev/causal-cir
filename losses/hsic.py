@@ -118,9 +118,7 @@ def pairwise_hsic_exact(R: torch.Tensor, sigma: Optional[float] = None) -> torch
 
 # ---------------------------------------------------------------------------
 # Normalized by 1/n² to match the exact estimator (see tests/test_hsic.py
-# RFF-vs-exact convergence test). If you're cross-checking against the
-# paper's Appendix A.3, note the paper text has an error here (states 1/n)
-# that needs a separate fix in the paper source, not here.
+# RFF-vs-exact convergence test), consistent with the paper's Appendix A.3.
 # ---------------------------------------------------------------------------
 
 def pairwise_hsic_rff(R: torch.Tensor,

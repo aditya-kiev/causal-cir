@@ -23,10 +23,12 @@ Source: `data/synthetic_scm.py`.
   [0,1]); flattened that is **3072** dims (`img_size: int = 32`).
 - Causal latent indices: `causal_parents` (TrainConfig default `[0, 1]`), i.e.
   **2 causal latents**.
-- `nuisance_dims: int = 4` is accepted by the config/constructor but is
-  **stored and never used** in any `sample_prior` implementation — flagging
-  this because the paper may claim a 4-nuisance-dim split while the code
-  actually produces 8 latent dims (2 causal + 6 non-causal).
+- `nuisance_dims` (RESOLVED): the config/constructor previously accepted a
+  `scm_nuisance_dims`/`nuisance_dims` parameter that was **stored and never
+  used**. It has been removed from `TrainConfig`, `_BaseSCM`, and
+  `build_dataloaders`. The SCM produces 8 latent dims total = 2 causal + 6
+  non-causal (the "nuisance" split is implicit: every non-causal latent is a
+  nuisance latent).
 - All SCMs hard-code `seed = 42` for the renderer.
 
 ### Rendering function g(z)
@@ -265,8 +267,9 @@ Consistent with the README's "every table entry is mean ± std over 3 seeds".
 2. **ACS vs §6.1 description**: code measures per-coordinate mean-abs change
    `E|Δr_j|`, not an L2 norm; the "E[Δz_i]" denominator is the constant
    `delta`.
-3. **SCM latent structure**: `latent_dim = 8` fixed; `nuisance_dims = 4` is
-   configured but unused, so the causal/nuisance split is 2/6, not 2/4.
+3. **SCM latent structure**: `latent_dim = 8` fixed; the `nuisance_dims`
+   config param was removed (never used), so the causal/nuisance split is
+   2/6, not 2/4.
 4. **Colored MNIST has no validation split** — only two test environments.
 5. **ID/OOD Acc vs ITG** are the same probe measurement (item c).
 6. **Waterbirds backbone/resolution (RESOLVED)**: Decision from Aditya — keep

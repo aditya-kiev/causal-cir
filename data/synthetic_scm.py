@@ -10,7 +10,7 @@ Each generator:
   - renders a pixel observation via a random nonlinear decoder
   - supports intervention: fix a chosen latent to a value, re-render
 
-Causal parents S and nuisance latents are configurable.
+Causal parents S and latent structure are configurable.
 """
 
 import torch
@@ -24,13 +24,11 @@ class _BaseSCM:
     def __init__(
         self,
         causal_parents: List[int],
-        nuisance_dims: int = 4,
         img_size: int = 32,
         latent_dim: int = 8,
         seed: int = 42,
     ):
         self.causal_parents = causal_parents
-        self.nuisance_dims = nuisance_dims
         self.img_size = img_size
         self.latent_dim = latent_dim
         self.seed = seed

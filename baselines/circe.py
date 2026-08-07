@@ -17,6 +17,9 @@ Implementation:
      mean is trained jointly via an additional MSE term.
 
 This is the method closest to CIR and must be compared head-to-head.
+
+Compared head-to-head in the CIRCE ablation but excluded from Table 1;
+see paper Section 8 for the rationale.
 """
 
 import torch

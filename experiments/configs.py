@@ -15,7 +15,6 @@ class TrainConfig:
     data_root: str = "./data"
     scm_name: Optional[str] = None          # "independent" | "causal_chain" | "confounded"
     scm_causal_parents: List[int] = field(default_factory=lambda: [0, 1])
-    scm_nuisance_dims: int = 4
     colored_mnist_p_corr: float = 0.9       # spurious correlation strength
 
     # Model

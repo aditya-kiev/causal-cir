@@ -237,8 +237,7 @@ def build_dataloaders(cfg: TrainConfig):
         uncorr_loader = DataLoader(test_dataset, **eval_kwargs)
 
     elif cfg.dataset == "scm":
-        scm = get_scm(cfg.scm_name, causal_parents=cfg.scm_causal_parents,
-                      nuisance_dims=cfg.scm_nuisance_dims)
+        scm = get_scm(cfg.scm_name, causal_parents=cfg.scm_causal_parents)
         scm_kwargs = {**train_kwargs, "num_workers": 0, "pin_memory": False}
         scm_eval_kwargs = {**scm_kwargs, "shuffle": False, "drop_last": False}
         train_dataset = SCMDataset(scm, size=cfg.batch_size * 3)

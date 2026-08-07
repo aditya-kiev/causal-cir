@@ -22,3 +22,12 @@ Thumbs.db
 .env
 coverage/
 htmlcov/
+
+# dev scratch artifacts (never meant to be committed)
+dev-scratch/
+
+# experiment outputs (CSVs/metrics/checkpoints written at run time)
+outputs/
+
+# raw downloaded datasets (torchvision downloads into data/<NAME>/raw on demand)
+data/MNIST/raw/
