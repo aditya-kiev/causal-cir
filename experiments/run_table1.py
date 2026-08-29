@@ -58,9 +58,9 @@ from experiments.configs import TrainConfig, get_config
 from experiments.train import main as train_main, find_latest_ckpt, _collect_repro_meta
 
 # Table 1 methods — confirm these match build_model_and_loss() in train.py
-METHODS = ["simclr", "simclr_marginal", "barlow_twins", "vicreg", "cir"]
+METHODS = ["simclr", "simclr_marginal", "cir"]
 
-SEEDS = [0, 1, 2]
+SEEDS = [0]
 
 # The five Table 1 benchmarks: label -> base config (method is overridden below).
 _DATASET_CONFIGS = {

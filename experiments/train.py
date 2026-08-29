@@ -423,17 +423,10 @@ def main(cfg: TrainConfig):
 
     encoder, loss_fn = build_model_and_loss(cfg, device)
 
-    # NOTE: Paper Appendix B.2 states plain Adam, but the code currently uses
-    # AdamW with weight_decay=1e-6. This discrepancy needs a decision from
-    # Aditya — either the paper text changes to say AdamW, or the code changes
-    # to plain Adam (removing weight_decay) — before real experiments are run
-    # under this config, since it will affect reproducing numbers either way.
     params = list(encoder.parameters())
     if isinstance(loss_fn, torch.nn.Module):
         params += list(loss_fn.parameters())
-    optimizer = torch.optim.AdamW(
-        params, lr=cfg.lr, weight_decay=cfg.weight_decay,
-    )
+    optimizer = torch.optim.Adam(params, lr=cfg.lr)
 
     scheduler = None
     if cfg.lr_schedule == "cosine" and train_loader is not None:

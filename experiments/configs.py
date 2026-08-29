@@ -42,7 +42,6 @@ class TrainConfig:
     epochs: int = 200
     batch_size: int = 256
     lr: float = 3e-4                        # synthetic SCMs: 1e-3; real datasets: 1e-4 (override)
-    weight_decay: float = 1e-6
     lr_schedule: str = "cosine"
     lr_warmup_epochs: int = 10
     seed: int = 0
@@ -71,10 +70,10 @@ class TrainConfig:
     # is resnet18 per the paper (Appendix B.2) for all Waterbirds methods.
     resolution: int = 128
 
-    # Plateau early stopping (opt-in): stop if validation loss has not improved
-    # by more than plateau_min_improve (relative) for plateau_patience epochs.
-    plateau_early_stop: bool = False
-    plateau_patience: int = 20
+    # Plateau early stopping: stop if validation loss has not improved by more
+    # than plateau_min_improve (relative) for plateau_patience epochs.
+    plateau_early_stop: bool = True
+    plateau_patience: int = 15
     plateau_min_improve: float = 0.005       # 0.5%
 
     # Hardware
